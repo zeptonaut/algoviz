@@ -1,95 +1,111 @@
 'use strict';
 (function () {
-  var n = 20,
-      array = d3.shuffle(d3.range(n));
+  var NUM_ELEMENTS = 10,
+      array = d3.shuffle(d3.range(NUM_ELEMENTS));
+  var SVG_WIDTH = 960,
+      SVG_HEIGHT = 100;
+  var BOX_WIDTH = (SVG_WIDTH - 50) / NUM_ELEMENTS,
+      BOX_HEIGHT = SVG_HEIGHT / 2;
+  var ANIMATION_DURATION = 50;
+  var COLOR_START = '#1f77b4',
+      COLOR_END = '#d62728';
 
-  var width = 960,
-      height = 50;
-  var boxWidth = (width - 50) / n;
+  var x = d3.scale.ordinal().domain(d3.range(NUM_ELEMENTS + 1)).rangePoints([0, SVG_WIDTH]);
 
-  var x = d3.scale.ordinal().domain(d3.range(n + 1)).rangePoints([0, width]);
+  function rectTransform(d, i) {
+    return 'translate(' + x(i) + ')';
+  }
 
-  var svg = d3.select("body").append("svg").attr("width", width).attr("height", height);
+  function cursorTransform(d, i) {
+    return 'translate(\n        ' + (x(d) + BOX_WIDTH / 2) + ',\n        ' + (BOX_HEIGHT + (SVG_HEIGHT - BOX_HEIGHT) / 2) + ')';
+  }
 
-  var colorScale = d3.scale.linear().domain([0, n]).range(["red", "blue"]);
-  var groups = svg.selectAll("g").data(array).enter().append("g").attr("transform", function (d, i) {
-    return "translate(" + x(i) + ")";
-  });
+  var svg = d3.select("body").append("svg").attr("width", SVG_WIDTH).attr("height", SVG_HEIGHT);
+
+  var colorScale = d3.scale.linear().domain([0, NUM_ELEMENTS]).range([COLOR_START, COLOR_END]);
+
+  var groups = svg.selectAll("g").data(array).enter().append("g").attr("transform", rectTransform);
 
   var rects = groups.append("rect").attr("fill", function (d) {
     return colorScale(d);
-  }).attr("height", 20).attr("width", boxWidth);
+  }).attr("height", BOX_HEIGHT).attr("width", BOX_WIDTH).attr("stroke", "#111");
 
   var labels = groups.append('text').text(function (d) {
     return d;
   }).attr("transform", function (d, i) {
-    return "translate(0, 15)";
-  });
+    return 'translate(' + BOX_WIDTH / 2 + ', ' + BOX_HEIGHT / 2 + ')';
+  }).attr('class', 'element_labels');
 
-  function transform(d, i) {
-    return "translate(" + x(i) + ")";
-  }
+  var arrows = svg.selectAll('text.cursor').data([0, 1]).enter().append('text').text(function () {
+    return '↑';
+  }).attr('transform', cursorTransform).attr('class', 'cursor');
 
-  var arrayIndex = 0;
+  // Each state is of the form:
+  // {
+  //   array: [0, 1, 2, 3, 4, 5],
+  //   cursors: [0, 1],
+  //   done: [10]
+  // }
+  var states = [];
+  var stateIndex = 0;
   function doNext(shouldContinue) {
-    if (arrayIndex + 1 >= arrays.length) return;
+    if (stateIndex + 1 >= states.length) return;
 
-    groups.data(arrays[++arrayIndex], Number).transition().duration(1000).attr("transform", transform);
+    var newState = states[++stateIndex];
+    groups.data(newState.array, Number).transition().duration(ANIMATION_DURATION).attr("transform", rectTransform);
+
+    arrows.data(newState.cursors).transition().duration(ANIMATION_DURATION).attr("transform", cursorTransform);
 
     if (shouldContinue) window.setTimeout(function () {
       return doNext(true);
-    }, 1000);
+    }, ANIMATION_DURATION);
   }
 
-  var transformIndex = 0;
-  function doNextTransform(shouldContinue) {
-    if (transformIndex == transforms.length) return;
-
-    transforms[transformIndex++]();
-
-    if (shouldContinue) window.setTimeout(function () {
-      return doNextTransform(true);
-    }, 1000);
-  }
-
-  function doPrevious() {}
-
-  var originalArray = array.slice();
-
-  var arrays = [];
+  var states = [];
   var transforms = [];
 
+  var done = [];
   for (var pass = 0; pass < array.length - 1; pass++) {
     var passMadeChange = false;
 
-    var _loop = function (i) {
+    for (var i = 0; i < array.length - 1 - pass; i++) {
+      // State change: updated the cursor
+      states.push({
+        array: array.slice(),
+        cursors: [i, i + 1],
+        done: done
+      });
+
       if (array[i] > array[i + 1]) {
+
+        // State change: swapped two elements
         var _ref = [array[i + 1], array[i]];
         array[i] = _ref[0];
         array[i + 1] = _ref[1];
-
-        transforms.push(function () {
-          var _ref2 = [array[i + 1], array[i]];
-          array[i] = _ref2[0];
-          array[i + 1] = _ref2[1];
-
-          groups.data(array, Number).transition().duration(1000).attr("transform", transform);
+        states.push({
+          array: array.slice(),
+          cursors: [i, i + 1],
+          done: done
         });
         passMadeChange = true;
       }
-    };
-
-    for (var i = 0; i < array.length - 1 - pass; i++) {
-      _loop(i);
     }
 
-    if (!passMadeChange) break;
+    done.push(array.length - 1 - pass);
+
+    if (!passMadeChange) {
+      // TODO(charliea): State change
+      states.push({
+        array: array.slice(),
+        cursors: [],
+        done: d3.range(0, array.length - 1)
+      });
+      break;
+    }
   }
 
-  array = originalArray;
-
-  doNextTransform(true);
-  document.getElementById("next").addEventListener("click", function () {
-    doNext();
-  });
+  doNext(true);
+  // document.getElementById("next").addEventListener("click", function() {
+  //   doNext();
+  // });
 })();
