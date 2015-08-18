@@ -1,58 +1,85 @@
 'use strict';
 (function() {
-  var NUM_ELEMENTS = 10, array = d3.shuffle(d3.range(NUM_ELEMENTS));
+  var NUM_ELEMENTS = 10;
   var SVG_WIDTH = 960, SVG_HEIGHT = 100;
   var BOX_WIDTH = (SVG_WIDTH - 50) / NUM_ELEMENTS, BOX_HEIGHT = SVG_HEIGHT / 2;
-  var ANIMATION_DURATION = 50;
+  var MARGIN = 5;
+  
+  var STEP_DURATION = 150;
+  
   var COLOR_START = '#1f77b4', COLOR_END = '#d62728';
+  var DEFAULT_STROKE = '#111', DONE_STROKE = '#2ca02c';
 
+  function groupTransform(d, i) {
+    return `translate(${x(i)}, ${MARGIN})`;
+  }
+
+  function checkTransform(d, i) {
+    return `translate(${BOX_WIDTH / 2}, ${BOX_HEIGHT + 25})`;
+  }
+  
+  function cursorTransform(d, i) {
+    return `translate(${x(d) + BOX_WIDTH / 2}, ${MARGIN + BOX_HEIGHT + (SVG_HEIGHT - BOX_HEIGHT) / 2})`;
+  }
+
+  //showBubbleSort(element, startIndex, endIndex);
+  
   var x = d3.scale.ordinal()
         .domain(d3.range(NUM_ELEMENTS + 1))
-        .rangePoints([0, SVG_WIDTH]);
-
-  function rectTransform(d, i) {
-    return `translate(${x(i)})`;
-  }
-
-  function cursorTransform(d, i) {
-    return `translate(
-        ${x(d) + BOX_WIDTH / 2},
-        ${BOX_HEIGHT + (SVG_HEIGHT - BOX_HEIGHT) / 2})`;
-  }
+        .rangePoints([MARGIN, SVG_WIDTH - MARGIN]);
+  
+  var colorScale = d3.scale.linear()
+        .domain([0,NUM_ELEMENTS])
+        .range([COLOR_START, COLOR_END]);
 
   var svg = d3.select("body").append("svg")
         .attr("width", SVG_WIDTH)
         .attr("height", SVG_HEIGHT);
 
-  var colorScale = d3.scale.linear()
-      .domain([0,NUM_ELEMENTS])
-      .range([COLOR_START, COLOR_END]);
+  var array = d3.shuffle(d3.range(NUM_ELEMENTS));
+  
+  var groups = svg.selectAll("g.elements").data(array)
+        .enter()
+        .append("g")
+        .attr('class', 'element')
+        .attr("transform", groupTransform);
 
-  var groups = svg.selectAll("g")
-        .data(array)
-        .enter().append("g")
-        .attr("transform", rectTransform);
-
-  var rects = groups
-        .append("rect")
+  var rects = groups.append("rect")
         .attr("fill", d => colorScale(d))
         .attr("height", BOX_HEIGHT)
         .attr("width", BOX_WIDTH)
-        .attr("stroke", "#111");
+        .attr("stroke", '#111');
 
-  var labels = groups
-        .append('text')
+  var labels = groups.append('text')
         .text(d => d)
         .attr("transform", (d, i) => `translate(${BOX_WIDTH / 2}, ${BOX_HEIGHT / 2})`)
         .attr('class', 'element_labels');
 
-  var arrows = svg.selectAll('text.cursor')
-      .data([0, 1])
-      .enter().append('text')
-      .text(() => '↑')
-      .attr('transform', cursorTransform)
-      .attr('class', 'cursor');
+  var arrows = svg.selectAll('text.cursor').data([0, 1])
+        .enter()
+        .append('text')
+        .text(() => '↑')
+        .attr('transform', cursorTransform)
+        .attr('class', 'cursor');
 
+  var checks = groups.append('text')
+        .attr('transform', checkTransform)
+        .attr('class', 'checks');
+
+  // Render the play button overlay last so that it's on top
+  
+  // var player = svg.append('g')
+  //       .attr('class', 'player')
+  //       .on('click', () => alert('hello!'));
+
+  // var playerRect = player.append('rect')
+  //       .attr('width', SVG_WIDTH)
+  //       .attr('height', SVG_HEIGHT);
+
+  // var playButton = player.append('text')
+  //       .text('►')
+  //       .attr('x', SVG_WIDTH / 2)
+  //       .attr('y', SVG_HEIGHT / 2);
   // Each state is of the form:
   // {
   //   array: [0, 1, 2, 3, 4, 5],
@@ -67,42 +94,46 @@
 
     var newState = states[++stateIndex];
     groups.data(newState.array, Number)
-        .transition()
-        .duration(ANIMATION_DURATION)
-        .attr("transform", rectTransform);
+      .transition()
+      .duration(STEP_DURATION)
+      .attr("transform", groupTransform)
+      .each(function(d, i) {
+        if (newState.done.indexOf(i) !== -1) {
+          d3.select(this.querySelector('text.checks')).text('✔');
+        }
+      });
 
     arrows.data(newState.cursors)
-        .transition()
-        .duration(ANIMATION_DURATION)
-        .attr("transform", cursorTransform);
+      .exit().remove();
 
+    arrows.transition()
+      .duration(STEP_DURATION)
+      .attr("transform", cursorTransform);
+    
     if (shouldContinue)
-      window.setTimeout(() => doNext(true), ANIMATION_DURATION);
+      window.setTimeout(() => doNext(true), STEP_DURATION);
   }
-
-  var states = [];
-  var transforms = [];
 
   var done = [];
   for (let pass = 0; pass < array.length - 1; pass++) {
     var passMadeChange = false;
 
     for (let i = 0; i < (array.length - 1 - pass); i++) {
-      // State change: updated the cursor
+      // State change: moving the cursor
       states.push({
         array: array.slice(),
         cursors: [i, i + 1],
-        done: done
+        done: done.slice()
       });
 
       if (array[i] > array[i + 1]) {
         [array[i], array[i + 1]] = [array[i + 1], array[i]];
 
-        // State change: swapped two elements
+        // State change: swapping two elements
         states.push({
           array: array.slice(),
           cursors: [i, i + 1],
-          done: done
+          done: done.slice()
         });
         passMadeChange = true;
       }
@@ -111,18 +142,16 @@
     done.push(array.length - 1 - pass);
 
     if (!passMadeChange) {
-      // TODO(charliea): State change
+      // State change: marking all elements done, removing cursors
       states.push({
         array: array.slice(),
         cursors: [],
-        done: d3.range(0, array.length - 1)
+        done: d3.range(0, array.length)
       });
+      
       break;
     }
   }
 
   doNext(true);
-  // document.getElementById("next").addEventListener("click", function() {
-  //   doNext();
-  // });
 })();
